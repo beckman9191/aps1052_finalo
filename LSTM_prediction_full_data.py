@@ -9,12 +9,12 @@ from datetime import datetime, timedelta
 from function import create_model
 
 
-company = 'META'
+company = 'TSLA'
 timestep = 60
-period = 30
+period = 14
 
 # Load the saved model and scaler
-sc = load(f'models/LSTM_scaler_{company}.joblib')
+sc = load(f'models/LSTM_scaler_full_data_{company}.joblib')
 model = Sequential()
 model.add(LSTM(units=100, return_sequences=True, input_shape=(timestep, 1)))
 model.add(Dropout(0.2))
@@ -27,7 +27,7 @@ model.add(Dropout(0.2))
 model.add(Dense(units=1))
 
 # Loading weights
-with np.load(f'models/LSTM_weights_{company}.npz') as data:
+with np.load(f'models/LSTM_weights_full_data_{company}.npz') as data:
     loaded_weights = [data[key] for key in sorted(data.keys(), key=lambda x: int(x.split('_')[1]))]
 model.set_weights(loaded_weights)
 
@@ -75,7 +75,7 @@ predictions_df = pd.DataFrame({
 })
 
 # Save DataFrame to CSV
-predictions_df.to_csv(f'Prediction/predicted_prices_{company}.csv', index=False)
+predictions_df.to_csv(f'Prediction/predicted_prices_full_data_{company}.csv', index=False)
 
 
 # Ensure future_dates and predicted_prices_inversed are aligned
@@ -92,5 +92,5 @@ plt.xticks(rotation=45)
 plt.tight_layout()
 
 #save the plot
-fig.savefig(f'Prediction/{period}_day_forecast_{company}.png')
+fig.savefig(f'Prediction/{period}_day_forecast_full_data_{company}.png')
 plt.show()

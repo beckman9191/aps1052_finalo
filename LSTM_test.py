@@ -8,13 +8,22 @@ from joblib import load
 from function import create_model
 
 company = 'META'
-timestep = 180
+timestep = 60
 
 # Load the saved model and scaler
 sc = load(f'models/LSTM_scaler_{company}.joblib')
 #sc = load(f'models/preprocessing_pipeline_{company}.joblib')
 # Recreate the model architecture
-model = create_model(timestep)
+model = Sequential()
+model.add(LSTM(units=100, return_sequences=True, input_shape=(timestep, 1)))
+model.add(Dropout(0.2))
+model.add(LSTM(units=100, return_sequences=True))
+model.add(Dropout(0.2))
+model.add(LSTM(units=100, return_sequences=True))
+model.add(Dropout(0.2))
+model.add(LSTM(units=100, return_sequences=False))
+model.add(Dropout(0.2))
+model.add(Dense(units=1))
 
 # Loading weights
 with np.load(f'models/LSTM_weights_{company}.npz') as data:
@@ -34,8 +43,13 @@ data['Date'] = pd.to_datetime(data['Date'])
 
 # Set the date for the last 2 years
 last_year_date = data['Date'].max() - pd.DateOffset(years=2)
-# Split into training and test sets (80% train, 20% test)
+
 test_data = data[data['Date'] >= last_year_date]
+
+print(test_data['Date'])
+
+# Prepare the date labels
+date_labels = test_data['Date'].iloc[timestep:].reset_index(drop=True)
 
 test_data['Close'] = pd.to_numeric(test_data.Close, errors='coerce')
 test_data = test_data.dropna()
@@ -57,7 +71,7 @@ for i in range(timestep, length):
 X_test = np.array(X_test)
 X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
 
-print(X_test.shape)
+print(X_test[1])
 
 # Using previous predictions for future predictions
 predicted_price = []
@@ -70,6 +84,8 @@ for i in range(len(X_test)):
     if i < len(X_test) - 1:
         X_test[i + 1, :-1, 0] = X_test[i + 1, 1:, 0]
         X_test[i + 1, -1, 0] = pred
+    
+    
 
 predicted_price = np.array(predicted_price).reshape(-1, 1)
 predicted_price = sc.inverse_transform(predicted_price)
@@ -80,12 +96,16 @@ predicted_price = sc.inverse_transform(predicted_price)
 #predicted_price = sc.inverse_transform(y_pred)
 #print(predicted_price)
 
-plt.plot(y_test, color = 'red', label = 'Actual Stock Price')
-plt.plot(predicted_price, color = 'green', label = 'Predicted Stock Price')
+
+plt.plot(date_labels, y_test, color = 'red', label = 'Actual Stock Price')
+plt.plot(date_labels, predicted_price, color = 'green', label = 'Predicted Stock Price')
 plt.title(f'{company} stock price prediction')
 plt.xlabel('Time')
 plt.ylabel('Stock Price')
 plt.legend()
+plt.grid(True)
+plt.xticks(rotation=45)
+plt.tight_layout()
 
 # Save the plot as a PNG file
 plt.savefig(f'Results/price_prediction_{company}.png')

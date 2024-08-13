@@ -9,18 +9,16 @@ from tensorflow.keras.layers import Dense, LSTM, Dropout, AdditiveAttention, Per
 from joblib import dump
 from function import create_model
 
-company = 'META'
+company = 'TSLA'
 data = pd.read_csv(f'data/{company}.csv')
+timestep = 60
 
 # Convert 'Date' column to datetime format if it's not already
 data['Date'] = pd.to_datetime(data['Date'])
 
-# Set the date for the last 1 year(s)
-last_year_date = data['Date'].max() - pd.DateOffset(years=2)
-
 
 # Split the data into training and test sets
-train_data = data[data['Date'] < last_year_date]
+train_data = data
 
 
 # Load and Preprocessing Training Data
@@ -35,13 +33,11 @@ sc = MinMaxScaler(feature_range=(0, 1))
 train_data = sc.fit_transform(train_data)
 
 # Save the fitted scaler
-dump(sc, f'models/LSTM_scaler_{company}.joblib')
+dump(sc, f'models/LSTM_scaler_full_data_{company}.joblib')
 
 
 X_train = []
 y_train = []
-
-timestep = 60
 
 for i in range(timestep, len(train_data)):
     X_train.append(train_data[i-timestep: i, 0])
@@ -76,7 +72,7 @@ hist = model.fit(X_train, y_train, epochs=20, batch_size=32, verbose=2)
 
 # Saving weights manually to avoid potential meta-data issues
 weights = model.get_weights()  # Gets the weights and biases in a list of numpy arrays.
-np.savez(f'models/LSTM_weights_{company}.npz', *weights)
+np.savez(f'models/LSTM_weights_full_data_{company}.npz', *weights)
 
 plt.plot(hist.history['loss'])
 plt.title('Training Model Loss')
@@ -86,7 +82,7 @@ plt.legend(['train'], loc='upper left')
 plt.grid(True)
 
 # Save the plot as a PNG file
-plt.savefig(f'Results/training_loss_{company}.png')
+plt.savefig(f'Results/training_loss_full_data_{company}.png')
 
 plt.show()
 
