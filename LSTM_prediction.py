@@ -6,89 +6,79 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Dropout
 from joblib import load
 from datetime import datetime, timedelta
+from function import create_model
 
+
+company = 'META'
 timestep = 180
-company = 'LTO'
+period = 90
 
 # Load the saved model and scaler
 sc = load(f'models/LSTM_scaler_{company}.joblib')
-print("Min:", sc.data_min_)
-print("Max:", sc.data_max_)
-print("Scale:", sc.data_max_ - sc.data_min_)
-model = Sequential()
-model.add(LSTM(units=100, return_sequences=True, input_shape=(timestep, 1)))
-model.add(Dropout(0.2))
-model.add(LSTM(units=100, return_sequences=True))
-model.add(Dropout(0.2))
-model.add(LSTM(units=100, return_sequences=True))
-model.add(Dropout(0.2))
-model.add(LSTM(units=100, return_sequences=False))
-model.add(Dropout(0.2))
-model.add(Dense(units=1))
+model = create_model(timestep)
 
 # Loading weights
-with np.load(f'models/LSTM_{company}_weights.npz') as data:
+with np.load(f'models/LSTM_weights_{company}.npz') as data:
     loaded_weights = [data[key] for key in sorted(data.keys(), key=lambda x: int(x.split('_')[1]))]
 model.set_weights(loaded_weights)
 
-# Load and preprocess training data
+# Compile the model for making predictions
+model.compile(optimizer='adam', loss="mean_squared_error")
+
+
+# Read the data
 data = pd.read_csv(f'data/{company}.csv')
-data["Close"] = pd.to_numeric(data.Close, errors='coerce')
-data = data.dropna()
+data['Date'] = pd.to_datetime(data['Date'])  # Convert 'Date' column to datetime format if it's not already
 
+# Extract the last 180 days data
+latest_data = data.iloc[-timestep:, 4:5]  # Assuming 'Close' is the 5th column
 
+# Prepare data for prediction
+latest_data_scaled = sc.transform(latest_data)
+X_latest = np.reshape(latest_data_scaled, (1, timestep, 1))  # Reshape for LSTM
 
-# Handle dates for plotting and future prediction
-last_date = pd.to_datetime(data['Date'].iloc[-1])
-
-# Prepare the initial input (last 120 days)
-input_values = data["Close"].values[-timestep:]  # Extract the last 120 days' Close prices
-input_values = input_values.reshape(-1, 1)
-print(input_values)
-input_values_scaled = sc.transform(input_values)  # Scale the values and reshape for transform
-input_seq = input_values_scaled.reshape(1, timestep, 1)  # Reshape for model input
-
-
-
+# Predict the next 365 business days prices
 predicted_prices = []
-current_input = input_seq
-
-# Iteratively predict the next 90 days
-for _ in range(90):
-    # Predict the next step
-    next_price = model.predict(current_input)
+current_input = X_latest
+for i in range(period):
+    # Predict the next day price
+    next_price_scaled = model.predict(current_input)
+    predicted_prices.append(next_price_scaled[0, 0])  # Store the scaled prediction
     
-    predicted_prices.append(sc.inverse_transform(next_price))  # Inverse transform to get the actual price
+    # Update current_input for next prediction
+    current_input = np.append(current_input[:, 1:, :], next_price_scaled.reshape(1, 1, 1), axis=1)
 
-    # Update the current_input to include the predicted price and drop the oldest price
-    current_input = np.append(current_input[:, 1:, :], next_price.reshape(1, 1, 1), axis=1)
+# Transform predicted prices back to original scale
+predicted_prices_array = np.array(predicted_prices).reshape(-1, 1)
+predicted_prices_inversed = sc.inverse_transform(predicted_prices_array)
 
-# Flatten the list of predictions to match the future_dates length
-predicted_prices = np.array(predicted_prices).flatten()
+# Generate future business dates
+last_date = data['Date'].iloc[-1]
+future_dates = pd.date_range(start=last_date, periods=period + 1, freq='B')[1:]  # Use 'B' for business day frequency
 
-# Generate Future Dates
-future_dates = [last_date + timedelta(days=i) for i in range(1, 91)]  # Next 90 days
-
-print(len(future_dates))  # Should be 90
-print(len(predicted_prices.flatten()))  # Should also be 90
-
-# Create a DataFrame with Future Dates and Predicted Prices
-predicted_df = pd.DataFrame({
+# Create DataFrame to save to CSV
+predictions_df = pd.DataFrame({
     'Date': future_dates,
-    'Predicted_Price': predicted_prices.flatten()
+    'Predicted_Price': predicted_prices_inversed.flatten()
 })
 
-# Save to CSV
-predicted_df.to_csv(f'Prediction/3_month_price_prediction_{company}.csv', index=False)
+# Save DataFrame to CSV
+predictions_df.to_csv(f'Prediction/predicted_prices_{company}.csv', index=False)
+print(predicted_prices_inversed.flatten())
 
-# Plot the Predicted Prices
-plt.figure(figsize=(10, 5))
-plt.plot(predicted_df['Date'], predicted_df['Predicted_Price'], color='green', label='Predicted 3-Month Stock Price')
-plt.title(f'{company} 3-Month Stock Price Prediction')
+# Ensure future_dates and predicted_prices_inversed are aligned
+print(f"Dates length: {len(future_dates)}, Prices length: {len(predicted_prices_inversed)}")
+
+fig = plt.figure(figsize=(15, 7))
+plt.plot(future_dates, predicted_prices_inversed.flatten(), label='Predicted Prices')
+plt.title(f'{company} Stock Price Forecast for Next {period} Business Days')
 plt.xlabel('Date')
-plt.ylabel('Stock Price')
+plt.ylabel('Price')
 plt.legend()
 plt.grid(True)
+plt.xticks(rotation=45)
+plt.tight_layout()
 
-plt.savefig(f'Prediction/3_month_price_prediction_{company}.png')
+#save the plot
+fig.savefig(f'Prediction/365_day_forecast_{company}.png')
 plt.show()
